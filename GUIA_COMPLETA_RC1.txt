@@ -1,0 +1,656 @@
+================================================================================
+  GUIA COMPLETA RC-1 -- LA MANZANA DEL TAMBO
+  CapyTown -- Robotica 2026-I -- Universidad ESAN
+  Yahboom MicroROS-Pi5 (skid-steer 4 ruedas)
+================================================================================
+
+INDICE
+------
+FASE 0 : Preparacion antes del laboratorio
+FASE 1 : Conexion y verificacion del robot
+FASE 2 : Calibracion de b_eff
+FASE 3 : Recorrido del cuadrado y grabacion de bags
+FASE 4 : Analisis con los scripts de la carpeta Solucion/
+FASE 5 : Entregable final y commit
+
+SETUP REAL DEL ROBOT
+--------------------
+  SSH:         pi@10.42.0.1   (contrasena: la proporciona la catedra)
+  ROS2:        Corre dentro de un contenedor Docker
+  Entrar:      bash ~/ros2_humble.sh   (desde el Pi5 via SSH)
+  Alternativa: docker exec -it agitated_rosalind bash
+  Volumen:     ~/yahboomcar_ws/ en el Pi5  ==  /root/yahboomcar_ws/ en Docker
+  Domain ID:   ROS_DOMAIN_ID=20 (ya seteado automaticamente al entrar al contenedor)
+  Topico odom: /odom_raw  (NO /odom -- el Yahboom publica en /odom_raw)
+  Scripts:     /root/yahboomcar_ws/src/Solucion/  (ejecutar con python3 directo)
+
+================================================================================
+FASE 0 -- PREPARACION ANTES DEL LABORATORIO
+================================================================================
+
+0.1  MATERIALES QUE DEBES LLEVAR AL LAB
+    - Laptop con SSH instalado (PowerShell en Windows sirve)
+    - Cinta masking (para marcar punto de inicio en el piso)
+    - Transportador de 360 grados (para medir el angulo real en calibracion)
+    - Cinta metrica (para medir el error final)
+    - Plumones o lapicero (para marcar en la cinta)
+
+0.2  SUBIR LOS SCRIPTS AL PI5 ANTES DE IR (hacerlo desde la laptop)
+    Desde PowerShell en Windows, copiar toda la carpeta Solucion/:
+
+        scp -r "C:\Users\Angel\Downloads\RETO 1- ROBOTICA\Solucion2" pi@10.42.0.1:~/yahboomcar_ws/src/
+
+    Verificar que llegaron (desde SSH al Pi5, dentro del Docker):
+        ls /root/yahboomcar_ws/src/Solucion/01_calibracion_beff/
+        ls /root/yahboomcar_ws/src/Solucion/02_movimiento_cuadrado/
+        ls /root/yahboomcar_ws/src/Solucion/03_error_odom/
+
+0.3  FLUJO DE DATOS -- PANORAMA GENERAL
+    calibrar_robot.py (nodo ROS2) --> calibration_log.csv
+    movimiento_cuadrado.py        + ros2 bag record --> bags/
+    calibracion_beff.py           --> convergencia.png + wheel_params.yaml
+    error_odom.py                 --> trayectoria_run*.png + tabla errores
+    informe_tecnico.py            --> informe completo
+
+0.4  RESPONDER LAS 3 PREGUNTAS DE ACTIVACION COGNITIVA (antes de encender)
+    Estas respuestas van en la seccion (a) del informe. Son predicciones
+    ANTES de medir -- no las cambies despues de ver los resultados reales.
+
+    Pregunta 1: Si el robot recorre el cuadrado 3 veces sin correccion,
+                cuanto error de posicion esperamos (en cm)?
+    Prediccion: Formula: sqrt(12 giros) x 1 grado ~ 3.5 grados acumulados.
+                Con 4 esquinas por vuelta -> estimacion ~ 2 a 7 cm de error.
+
+    Pregunta 2: Rectas o esquinas producen mas error?
+    Prediccion: Las ESQUINAS dominan. En giro en sitio, las 4 ruedas
+                patinan lateralmente. En las rectas el slip es minimo.
+
+    Pregunta 3: Si hubiera encoders de mayor resolucion, la odom dejaria de derivar?
+    Prediccion: NO. El slip lateral es un fenomeno fisico (goma sobre piso).
+                Los encoders miden rotacion de ejes, no desplazamiento del chasis.
+                Para eliminar deriva se necesita referencia absoluta (camara, GPS).
+
+================================================================================
+FASE 1 -- CONEXION Y VERIFICACION DEL ROBOT
+================================================================================
+
+1.1  CONECTAR LA BATERIA
+    - Insertar la bateria del Yahboom.
+    - Esperar ~30 segundos a que el Pi5 arranque.
+    - La pantalla OLED del robot mostrara la IP cuando este listo.
+    - La IP siempre es: 10.42.0.1
+
+1.2  CONECTARSE POR SSH DESDE LA LAPTOP
+    Abrir PowerShell en Windows:
+
+        ssh pi@10.42.0.1
+
+    Si es la primera vez: acepta el fingerprint escribiendo "yes".
+
+1.3  ENTRAR AL CONTENEDOR DOCKER (obligatorio para usar ROS2)
+    Dentro del Pi5 (via SSH):
+
+        bash ~/ros2_humble.sh
+
+    Esto entra al contenedor donde corre ROS2 Humble.
+    Ya tiene ROS_DOMAIN_ID=20 configurado automaticamente.
+    El directorio /root/yahboomcar_ws/ dentro del Docker es el mismo
+    que ~/yahboomcar_ws/ en el Pi5 (volumen montado -- NO se necesita docker cp).
+
+    Alternativa si el contenedor ya esta corriendo:
+        docker exec -it agitated_rosalind bash
+
+1.4  VERIFICAR QUE EL BRINGUP ESTA CORRIENDO
+    Dentro del Docker (Terminal 1 -- dejar corriendo si el bringup no esta activo):
+
+        source /opt/ros/humble/setup.bash
+        source /root/yahboomcar_ws/install/setup.bash
+        ros2 launch yahboomcar_bringup yahboomcar_bringup.launch.py
+
+    Si el bringup ya estaba corriendo desde antes, no es necesario relanzarlo.
+
+1.5  VERIFICAR QUE TODO FUNCIONA
+    Abrir una segunda terminal SSH al Pi5, luego entrar al Docker:
+
+        ssh pi@10.42.0.1
+        bash ~/ros2_humble.sh
+
+    Verificar que /odom_raw publica:
+        ros2 topic hz /odom_raw
+        # Debe mostrar ~50 Hz. Si no aparece, hay un problema con el bringup.
+
+    Verificar que /cmd_vel existe:
+        ros2 topic list | grep cmd_vel
+        # Debe aparecer /cmd_vel en la lista.
+
+    Ver un mensaje de odom:
+        ros2 topic echo /odom_raw --once
+        # Debes ver x, y, orientacion (quaternion). Al inicio deben ser ~0.
+
+    Ver todos los topicos activos:
+        ros2 topic list
+        # Deben aparecer: /odom_raw, /cmd_vel
+
+    Si /odom_raw no publica -> reiniciar el bringup (Ctrl+C en Terminal 1 y relanzar).
+    Si todo aparece -> LISTO para calibrar.
+
+================================================================================
+FASE 2 -- CALIBRACION DE b_eff
+================================================================================
+
+CONCEPTO RAPIDO:
+    b_eff (track efectivo) es la separacion virtual entre ruedas que el firmware
+    usa para calcular cuanto gira el robot. En el skid-steer, b_eff > ancho fisico
+    porque las ruedas patinan lateralmente durante los giros. El protocolo UMBmark
+    gira el robot 360 grados, mide el angulo REAL con transportador, y ajusta b_eff
+    hasta que la odometria coincide con la realidad (error < 1%).
+
+    Formula de correccion:
+        b_eff_nuevo = b_eff_viejo x (angulo_reportado / angulo_medido)
+
+2.1  PREPARACION FISICA
+    - Pon el robot en una superficie plana y sin obstaculos.
+    - Pega una tira de cinta masking en el piso alineada con la orientacion
+      inicial del robot (referencia visual para medir con transportador).
+    - Marca tambien el centro de rotacion aproximado del robot en el piso.
+    - Ten el transportador a mano.
+
+2.2  LANZAR EL SCRIPT DE CALIBRACION
+    Dentro del Docker (Terminal 2), con el entorno cargado:
+
+        source /opt/ros/humble/setup.bash
+        source /root/yahboomcar_ws/install/setup.bash
+        python3 /root/yahboomcar_ws/src/Solucion/01_calibracion_beff/calibrar_robot.py \
+            --ros-args \
+            -p b_eff:=0.20 \
+            -p target_angle_deg:=360.0 \
+            -p angular_vel:=0.5 \
+            -p log_path:=/root/yahboomcar_ws/calibration_log.csv
+
+    Nota: 0.20 m es el valor inicial sugerido. El script suscribe a /odom_raw
+    y publica en /cmd_vel directamente.
+
+2.3  CICLO DE CALIBRACION (repetir hasta convergencia)
+    El script muestra instrucciones en pantalla. El flujo es:
+
+    ITERACION 1:
+    a) El script espera 1 segundo (warmup para que /odom_raw conecte).
+    b) Aparece: "Presiona [ENTER] cuando estes listo para iniciar..."
+       -> Presiona ENTER para que el robot comience a girar.
+    c) Observa que el robot gira ~360 grados en sitio y se detiene solo.
+    d) El script muestra: "Robot detenido. Reportado por /odom_raw: 360.00 grados"
+    e) Aparece: "Mide con transportador el angulo REAL que giro el robot, en grados:"
+       -> Mide con el transportador desde la cinta de referencia y escribe el valor.
+       Ejemplo: si la cinta quedo a 11 grados de diferencia -> escribe 349.0
+    f) El script mostrara:
+           Reportado por /odom_raw : 360.00 grados
+           Medido a mano           : 349.00 grados
+           Error                   :   3.06 %
+           b_eff SUGERIDO          : 0.20629 m
+    g) Aparece: "Iterar otra corrida con el nuevo b_eff? [s/N]:"
+       -> Si el error es > 1%, escribe "s" para iterar.
+
+    ITERACION 2:
+    a) Devuelve el robot exactamente a la orientacion inicial (alinealo con la cinta).
+    b) Presiona ENTER. El robot gira con el nuevo b_eff.
+    c) Mide de nuevo el angulo real con el transportador.
+    d) Introduce el valor medido.
+    e) Si el error cae a < 1% -> el script declara convergencia automaticamente y cierra.
+       Si no -> continua iterando ("s").
+
+    CRITERIO DE CONVERGENCIA: error < 1%. Tipicamente 3 a 5 iteraciones.
+    Al terminar, el archivo calibration_log.csv queda en:
+        /root/yahboomcar_ws/calibration_log.csv
+
+2.4  APLICAR EL b_eff CALIBRADO AL FIRMWARE
+    Opcion A -- En runtime (temporal, para pruebas inmediatas):
+
+        ros2 param set /yahboom_driver wheel_separation <b_eff_final>
+
+    Ejemplo:
+        ros2 param set /yahboom_driver wheel_separation 0.20934
+
+    Opcion B -- Editar el YAML directamente en el Pi5 (no en Docker):
+        nano /home/pi/yahboomcar_ws/src/capytown_esan/config/wheel_params.yaml
+        # Cambiar la linea: wheel_separation: <b_eff_final>
+        # Guardar y reiniciar el bringup.
+
+2.5  COPIAR calibration_log.csv A LA LAPTOP
+    Desde PowerShell en Windows (NO desde el Pi5):
+
+        scp pi@10.42.0.1:~/yahboomcar_ws/calibration_log.csv .
+
+    Guarda el archivo en:
+        C:\Users\Angel\Downloads\RETO 1- ROBOTICA\Solucion\01_calibracion_beff\calibration_log.csv
+
+================================================================================
+FASE 3 -- RECORRIDO DEL CUADRADO Y GRABACION DE BAGS
+================================================================================
+
+CONFIGURACION DEL SCRIPT:
+    LINEAR_SPEED = 0.30 m/s   ->  SIDE_TIME = 1.0 / 0.30 = 3.33 s por lado
+    TURN_SPEED   = 0.50 rad/s ->  TURN_TIME = (pi/2) / 0.50 = 3.14 s por giro
+    1 vuelta = 4 lados + 4 giros ~ 26 s total
+    El script pide ENTER antes de moverse (para que el bag este grabando primero).
+
+3.1  PREPARAR EL AREA DE PISTA
+    - Dibuja un cuadrado de 1.0 x 1.0 m con cinta masking en el piso
+      (mide con cinta metrica, no a ojo).
+    - Posiciona el robot en una esquina del cuadrado marcado.
+    - Marca la posicion inicial del robot con cinta.
+    - Marca la orientacion inicial con cinta (para medir el error al final).
+
+3.2  RUN 1 -- GRABAR BAG Y EJECUTAR EL CUADRADO
+
+    TERMINAL A (dentro del Docker) -- para la grabacion del bag:
+
+        source /opt/ros/humble/setup.bash
+        source /root/yahboomcar_ws/install/setup.bash
+        ros2 bag record /odom_raw /cmd_vel -o /root/yahboomcar_ws/bags/tambo_G01_run1
+
+    Esperar el mensaje "Recording..." antes de continuar.
+
+    TERMINAL B (dentro del Docker) -- para el movimiento:
+
+        source /opt/ros/humble/setup.bash
+        source /root/yahboomcar_ws/install/setup.bash
+        python3 /root/yahboomcar_ws/src/Solucion/02_movimiento_cuadrado/movimiento_cuadrado.py
+
+    El script mostrara:
+        [INFO] Cuadrado 1x1 m - LINEAR 0.30 m/s  TURN 0.50 rad/s  t_avance=3.33s  t_giro=3.14s
+
+        Asegurate de que el bag ya esta grabando.
+        Presiona ENTER para iniciar el cuadrado...
+
+    -> Confirma que el bag esta grabando en Terminal A, luego presiona ENTER.
+    El robot comenzara a moverse. NO tocarlo mientras se mueve.
+    Al terminar los 4 lados, el script imprime "Cuadrado completado." y cierra.
+
+    Detener la grabacion del bag:
+        En Terminal A, presionar Ctrl+C
+    Verificar que el bag se guardo:
+        ros2 bag info /root/yahboomcar_ws/bags/tambo_G01_run1
+
+3.3  MEDIR EL ERROR FINAL (run 1)
+    Antes de mover el robot:
+    - Medir con cinta metrica la distancia desde el punto de inicio marcado
+      hasta la posicion actual del robot.
+    - Medir el componente horizontal (dx) y vertical (dy) separados.
+    - Medir el error de orientacion con el transportador respecto a la
+      orientacion inicial marcada.
+    - Anotar estos valores. Son los datos "cinta metrica" del informe.
+
+3.4  REPETIR PARA RUN 2 Y RUN 3
+    - Devolver el robot exactamente al punto de inicio marcado.
+    - Alinear con la orientacion inicial.
+    - Repetir el paso 3.2 con nombres de bag:
+        run2: /root/yahboomcar_ws/bags/tambo_G01_run2
+        run3: /root/yahboomcar_ws/bags/tambo_G01_run3
+    - Medir el error final despues de cada run.
+
+    Total: 3 bags grabados:
+        /root/yahboomcar_ws/bags/tambo_G01_run1
+        /root/yahboomcar_ws/bags/tambo_G01_run2
+        /root/yahboomcar_ws/bags/tambo_G01_run3
+
+3.5  COPIAR LOS BAGS A LA LAPTOP
+    Desde PowerShell en Windows:
+
+        scp -r pi@10.42.0.1:~/yahboomcar_ws/bags/ "C:\Users\Angel\Downloads\RETO 1- ROBOTICA\Solucion\03_error_odom\"
+
+    Verificar que cada bag tiene metadata.yaml y archivos .db3:
+        dir "C:\Users\Angel\Downloads\RETO 1- ROBOTICA\Solucion\03_error_odom\bags\tambo_G01_run1"
+
+================================================================================
+FASE 4 -- ANALISIS CON LOS SCRIPTS DE LA CARPETA Solucion/
+================================================================================
+
+IMPORTANTE: Los scripts de analisis se ejecutan DENTRO DEL DOCKER (en el Pi5)
+porque necesitan rosbag2_py (solo disponible en el entorno ROS2).
+Excepcion: calibracion_beff.py e informe_tecnico.py no necesitan ROS2 y se
+pueden ejecutar en la laptop si tienen Python3 + pandas + matplotlib instalados.
+
+Dentro del Docker, siempre sourcear primero:
+    source /opt/ros/humble/setup.bash
+    source /root/yahboomcar_ws/install/setup.bash
+
+4.1  ANALISIS DE CALIBRACION (Script 01)
+    Script: Solucion/01_calibracion_beff/calibracion_beff.py
+    Entrada: calibration_log.csv del robot
+    NO necesita ROS2. Se puede correr en la laptop o en el Pi5.
+
+    Ejecutar (en el Docker o en la laptop):
+        python3 /root/yahboomcar_ws/src/Solucion/01_calibracion_beff/calibracion_beff.py \
+            /root/yahboomcar_ws/calibration_log.csv \
+            --out-dir /root/yahboomcar_ws/salidas/
+
+    Que produce:
+    - Tabla de todas las iteraciones en pantalla.
+    - salidas/convergencia_beff.png -- grafica de convergencia de b_eff.
+    - salidas/wheel_params.yaml -- archivo con el b_eff final.
+    - Analisis cinematico con el b_eff calibrado:
+        v_R = v + omega * b_eff / 2
+        v_L = v - omega * b_eff / 2
+
+    Copiar salidas al Pi5 (ya estan en el volumen, no hace falta copiar nada mas).
+    Copiar wheel_params.yaml a la laptop desde PowerShell:
+        scp pi@10.42.0.1:~/yahboomcar_ws/salidas/wheel_params.yaml .
+
+4.2  ANALISIS DE TRAYECTORIAS (Script 03)
+    Script: Solucion/03_error_odom/error_odom.py
+    Entrada: los 3 bags grabados
+    REQUIERE ROS2 + rosbag2_py. Ejecutar dentro del Docker.
+
+    Ejecutar (dentro del Docker, un bag a la vez):
+
+        source /opt/ros/humble/setup.bash
+        source /root/yahboomcar_ws/install/setup.bash
+
+        python3 /root/yahboomcar_ws/src/Solucion/03_error_odom/error_odom.py \
+            /root/yahboomcar_ws/bags/tambo_G01_run1
+
+        python3 /root/yahboomcar_ws/src/Solucion/03_error_odom/error_odom.py \
+            /root/yahboomcar_ws/bags/tambo_G01_run2
+
+        python3 /root/yahboomcar_ws/src/Solucion/03_error_odom/error_odom.py \
+            /root/yahboomcar_ws/bags/tambo_G01_run3
+
+    Que produce por cada run:
+    - <ruta_bag>_trayectoria.png -- trayectoria /odom_raw vs cuadrado ideal.
+      El PNG incluye:
+        * Trayectoria real (linea roja) segun /odom_raw
+        * Cuadrado ideal 1x1 m (linea verde punteada)
+        * Punto de inicio (circulo azul)
+        * Punto de fin (cuadrado rojo con dx, dy en cm)
+        * Flecha del vector de error de cierre
+        * Recuadro con: dx, dy, |d| en cm
+    - Salida en pantalla:
+        [tambo_G01_run1] Error de cierre: dx=+1.23 cm, dy=-0.87 cm, |d|=1.51 cm
+
+    Si no hay mensajes en el bag:
+        ERROR: no se encontraron mensajes /odom_raw en el bag.
+        -> Verificar con: ros2 bag info /root/yahboomcar_ws/bags/tambo_G01_run1
+
+    Modo simulacion (sin bag, para probar el script):
+        python3 /root/yahboomcar_ws/src/Solucion/03_error_odom/error_odom.py --sim
+
+    NOTA: Si el error promedio es > 15 cm, hay que recalibrar b_eff.
+          Si es 5-15 cm, es el rango normal del skid-steer.
+          Si es <= 5 cm, se obtiene el BONUS de +4 puntos.
+
+4.3  COPIAR LOS PNG A LA LAPTOP
+    Desde PowerShell en Windows:
+
+        scp pi@10.42.0.1:~/yahboomcar_ws/bags/tambo_G01_run1_trayectoria.png .
+        scp pi@10.42.0.1:~/yahboomcar_ws/bags/tambo_G01_run2_trayectoria.png .
+        scp pi@10.42.0.1:~/yahboomcar_ws/bags/tambo_G01_run3_trayectoria.png .
+        scp pi@10.42.0.1:~/yahboomcar_ws/salidas/convergencia_beff.png .
+
+4.4  GENERAR EL INFORME TECNICO COMPLETO (Script 04)
+    Script: Solucion/04_informe_tecnico/informe_tecnico.py
+    Puede ejecutarse en el Pi5 (Docker) o en la laptop si tiene pandas + matplotlib.
+
+    Ejecutar (dentro del Docker):
+
+        source /opt/ros/humble/setup.bash
+        source /root/yahboomcar_ws/install/setup.bash
+        python3 /root/yahboomcar_ws/src/Solucion/04_informe_tecnico/informe_tecnico.py \
+            --cal /root/yahboomcar_ws/calibration_log.csv \
+            --bags /root/yahboomcar_ws/bags/tambo_G01_run1 \
+                   /root/yahboomcar_ws/bags/tambo_G01_run2 \
+                   /root/yahboomcar_ws/bags/tambo_G01_run3 \
+            --grupo G01 \
+            --domain 20 \
+            --out-dir /root/yahboomcar_ws/informe/
+
+    Que produce:
+    - Texto del informe en pantalla (base para el informe.pdf).
+    - informe/plots/convergencia_beff.png
+    - informe/plots/trayectoria_*.png (una por run)
+    - informe/wheel_params.yaml
+
+================================================================================
+FASE 5 -- ENTREGABLE FINAL Y COMMIT
+================================================================================
+
+5.1  ESTRUCTURA DE ARCHIVOS QUE DEBES TENER
+    Verifica que tienes todos estos archivos antes del commit:
+
+        capytown_G01_s10/
+        |-- config/
+        |   +-- wheel_params.yaml          <- con b_eff FINAL calibrado
+        |
+        |-- Solucion/
+        |   |-- 01_calibracion_beff/
+        |   |   |-- calibrar_robot.py
+        |   |   |-- calibracion_beff.py
+        |   |   +-- calibration_log.csv
+        |   |-- 02_movimiento_cuadrado/
+        |   |   +-- movimiento_cuadrado.py
+        |   |-- 03_error_odom/
+        |   |   |-- error_odom.py
+        |   |   +-- bags/
+        |   |       |-- tambo_G01_run1/    <- bag completo (metadata.yaml + .db3)
+        |   |       |-- tambo_G01_run2/
+        |   |       +-- tambo_G01_run3/
+        |   +-- 04_informe_tecnico/
+        |       +-- informe_tecnico.py
+        |
+        |-- plots/
+        |   |-- convergencia_beff.png
+        |   |-- tambo_G01_run1_trayectoria.png
+        |   |-- tambo_G01_run2_trayectoria.png
+        |   +-- tambo_G01_run3_trayectoria.png
+        |
+        |-- informe.pdf                    <- 1 pagina maxima
+        +-- README.md                      <- actualizado con grupo, domain, b_eff
+
+5.2  CONTENIDO DEL README.md
+    Actualizar con:
+        ## Grupo G01
+        - Integrantes: [nombres]
+        - ROS_DOMAIN_ID: 20
+        - b_eff calibrado: <valor> m
+        - Iteraciones UMBmark hasta convergencia: <n>
+        - Error promedio de cierre (3 runs): <valor> cm
+
+5.3  CONTENIDO DEL INFORME.PDF (1 pagina maxima)
+    Estructura obligatoria:
+
+    (a) PREDICCION INICIAL
+        - Respuesta 1: error esperado en cm (con calculo)
+        - Respuesta 2: esquinas producen mas error (con justificacion)
+        - Respuesta 3: encoders mejores no eliminan la deriva (con justificacion)
+
+    (b) CALIBRACION DE b_eff
+        - Tabla de iteraciones (del calibration_log.csv)
+        - b_eff final adoptado y como se aplico al firmware
+        - Imagen convergencia_beff.png
+
+    (c) RESULTADOS EXPERIMENTALES
+        - Tabla: dx, dy, |error| de cada run + promedio
+        - Indicar si cumple bonus (<= 5 cm) o minimo (<= 15 cm)
+        - Una de las imagenes trayectoria_run*.png (la mas representativa)
+
+    (d) ANALISIS DE CAUSA RAIZ
+        - Fuente principal de error identificada (slip lateral en giros)
+        - Por que las esquinas dominan sobre las rectas
+        - Coincidencia o discrepancia con la prediccion inicial
+
+    (e) PROPUESTA DE CORRECCION
+        - Semana 11: lane_detector.py -- corrige deriva lateral en rectas
+        - Semana 12: sign_detector.py -- senales PARE y semaforo
+        - Semana 13: obstacle_detector.py -- evasion de obstaculos
+        - Semana 14: AMCL/EKF -- fusion odom + LiDAR para posicion absoluta
+
+5.4  COMMIT Y TAG FINAL
+
+        git add config/wheel_params.yaml
+        git add Solucion/
+        git add plots/
+        git add informe.pdf
+        git add README.md
+        git commit -m "RC-1: entregable final - b_eff=<valor>, error_prom=<valor>cm"
+        git tag v1.0-rc1
+        git push origin main --tags
+
+================================================================================
+REFERENCIA RAPIDA -- COMANDOS MAS USADOS
+================================================================================
+
+CONEXION AL ROBOT:
+    ssh pi@10.42.0.1
+    bash ~/ros2_humble.sh            # entrar al Docker con ROS2
+
+DENTRO DEL DOCKER -- SOURCEAR SIEMPRE PRIMERO:
+    source /opt/ros/humble/setup.bash
+    source /root/yahboomcar_ws/install/setup.bash
+
+VERIFICACION:
+    ros2 topic hz /odom_raw          # debe ser ~50 Hz
+    ros2 topic echo /odom_raw --once # ver un mensaje
+    ros2 topic list                  # ver todos los topicos
+
+CALIBRACION:
+    python3 /root/yahboomcar_ws/src/Solucion/01_calibracion_beff/calibrar_robot.py \
+        --ros-args -p b_eff:=0.20 -p log_path:=/root/yahboomcar_ws/calibration_log.csv
+
+APLICAR b_eff EN RUNTIME:
+    ros2 param set /yahboom_driver wheel_separation <valor>
+
+GRABAR BAG:
+    ros2 bag record /odom_raw /cmd_vel -o /root/yahboomcar_ws/bags/tambo_G01_run1
+
+VERIFICAR BAG:
+    ros2 bag info /root/yahboomcar_ws/bags/tambo_G01_run1
+
+LANZAR CUADRADO:
+    python3 /root/yahboomcar_ws/src/Solucion/02_movimiento_cuadrado/movimiento_cuadrado.py
+
+ANALIZAR TRAYECTORIA:
+    python3 /root/yahboomcar_ws/src/Solucion/03_error_odom/error_odom.py \
+        /root/yahboomcar_ws/bags/tambo_G01_run1
+
+ANALIZAR CALIBRACION:
+    python3 /root/yahboomcar_ws/src/Solucion/01_calibracion_beff/calibracion_beff.py \
+        /root/yahboomcar_ws/calibration_log.csv --out-dir /root/yahboomcar_ws/salidas/
+
+COPIAR ARCHIVOS DE PI5 A LAPTOP (desde PowerShell en Windows):
+    scp pi@10.42.0.1:~/yahboomcar_ws/calibration_log.csv .
+    scp -r pi@10.42.0.1:~/yahboomcar_ws/bags/ .
+    scp pi@10.42.0.1:~/yahboomcar_ws/bags/tambo_G01_run1_trayectoria.png .
+
+COPIAR SOLUCION DE LAPTOP AL PI5 (desde PowerShell en Windows):
+    scp -r "C:\Users\Angel\Downloads\RETO 1- ROBOTICA\Solucion" pi@10.42.0.1:~/yahboomcar_ws/src/
+
+================================================================================
+RUBRICA -- QUE EVALUA CADA COSA
+================================================================================
+
+EJECUCION TECNICA (11 pts):
+    3 pts: Setup completo (bringup OK, /odom_raw publicando, /cmd_vel responde,
+           ROS_DOMAIN_ID=20 correcto).
+    4 pts: Calibracion de b_eff documentada (calibration_log.csv + valor final
+           adoptado en wheel_params.yaml).
+    2 pts: Robot completa las 3 corridas sin intervencion humana.
+    2 pts: Error de posicion <= 15 cm promedio (medido con cinta metrica).
+
+INFORME (3 pts):
+    Informe tecnico de 1 pagina con las 5 secciones obligatorias.
+
+DEFENSA TECNICA (2 pts):
+    1 integrante al azar responde 4 preguntas del banco de preguntas.
+    0.5 pts cada respuesta correcta y completa.
+
+BONUS (4 pts):
+    Error <= 5 cm en TODAS las repeticiones.
+
+TOTAL MAXIMO: 20 pts.
+
+================================================================================
+BANCO DE PREGUNTAS DE DEFENSA -- PREPARARSE TODOS LOS INTEGRANTES
+================================================================================
+
+CATEGORIA A -- Cinematica y modelo:
+1. Por que el Yahboom es un skid-steer y no diferencial puro?
+   Arg. mecanico: 4 ruedas fijas (no giran sobre su eje vertical).
+   Arg. geometrico: la ICR no es un punto unico -- varia con el slip.
+
+2. Si comando linear.x=0.2 m/s y angular.z=1.0 rad/s, y b_eff=0.20 m:
+   v_R = 0.2 + 1.0 x 0.20/2 = 0.2 + 0.10 = 0.30 m/s
+   v_L = 0.2 - 1.0 x 0.20/2 = 0.2 - 0.10 = 0.10 m/s
+
+3. Que pasa fisicamente en un giro en sitio?
+   Las ruedas derechas giran hacia adelante y las izquierdas hacia atras.
+   Las 4 ruedas patinan lateralmente porque estan fijas al chasis.
+   Ese patinaje lateral hace que el chasis se mueva diferente a lo modelado.
+
+4. Diferencia entre W (track fisico) y b_eff (track efectivo)?
+   W = distancia real entre centros de ruedas.
+   b_eff > W porque el slip lateral durante los giros hace que el robot
+   necesite modelar una separacion virtual mayor para que la odometria cuadre.
+
+CATEGORIA B -- Calibracion de b_eff:
+5. Por que giramos 360 grados y no 90 o 180?
+   360 grados maximiza el efecto del error sistematico de b_eff.
+   Un giro incompleto tiene mas ruido relativo; el circulo completo promedia
+   el slip en todas las direcciones.
+
+6. Si /odom_raw reporta 360 pero el robot giro fisicamente 350:
+   La odom SOBREESTIMA el giro. Correccion:
+   b_eff_nuevo = b_eff_viejo x (360 / 350) -> aumenta ligeramente.
+   Si angulo_medido < angulo_reportado -> b_eff_nuevo > b_eff_viejo.
+
+7. Cual fue el b_eff final y cuantas iteraciones?
+   Respuesta: ver calibration_log.csv del grupo. Explicar como se aplico.
+
+8. Si recalibran en otro piso, obtienen el mismo b_eff?
+   No. b_eff depende del coeficiente de friccion lateral de la superficie.
+   Piso liso (parquet) -> mas slip -> b_eff mayor.
+   Piso rugoso (alfombra) -> menos slip -> b_eff menor.
+
+CATEGORIA C -- Implementacion ROS2:
+9. Que topico publica la pose del robot?
+   /odom_raw -- tipo: nav_msgs/Odometry -- frecuencia: ~50 Hz.
+
+10. Por que ROS_DOMAIN_ID unico por grupo?
+    DDS (protocolo de comunicacion de ROS2) usa broadcast en la red local.
+    Sin dominios separados, todos los robots reciben los /cmd_vel de todos
+    los grupos. Con ROS_DOMAIN_ID, cada grupo tiene su red logica aislada.
+
+11. Comando exacto para grabar el bag:
+    ros2 bag record /odom_raw /cmd_vel -o tambo_G01_run1
+
+12. Que hace error_odom.py?
+    Paso 1: Lee el bag con rosbag2_py.SequentialReader.
+    Paso 2: Extrae los mensajes /odom_raw y calcula el error de cierre
+            (diferencia entre pose final y pose inicial).
+    Paso 3: Grafica la trayectoria real vs el cuadrado ideal con matplotlib.
+
+CATEGORIA D -- Analisis de la odometria:
+13. Fuente principal del error?
+    Slip lateral del skid-steer en los giros. Con 4 giros por vuelta
+    y cada giro acumula ~(b_eff error / 2) de desplazamiento lateral,
+    el error se acumula de forma aproximadamente lineal con el numero de giros.
+
+14. Rectas o esquinas producen mas error?
+    Las esquinas. En rectas, las 4 ruedas ruedan hacia adelante; slip minimo.
+    En giros en sitio, las 4 ruedas patinan lateralmente simultaneamente.
+    Con 4 giros y 4 m de rectas por vuelta, los giros aportan ~5-10x mas error.
+
+15. Si agregamos IMU + EKF, el error bajaria a cero?
+    No bajaria a cero. El IMU mide aceleracion y velocidad angular (deriva
+    con el tiempo por bias del giroscopio). El EKF fusiona odom + IMU pero
+    sin referencia absoluta (GPS, landmarks, LiDAR+mapa), el error sigue
+    creciendo, solo mas lento.
+
+16. Por que se dice que la odometria es "continua pero deriva"?
+    Continua: estima la pose en todo momento sin interrupciones.
+    Deriva: integra velocidades de rueda (variables con ruido y slip)
+    sin ningun punto de referencia absoluta. Los pequenos errores por
+    cuantizacion del encoder y slip se acumulan con el tiempo y la distancia.
+
+================================================================================
+FIN DE LA GUIA
+RC-1 La Manzana del Tambo -- CapyTown 2026-I -- ESAN
+================================================================================
