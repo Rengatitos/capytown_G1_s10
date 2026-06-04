@@ -1,0 +1,6 @@
+simulated_bag=true
+run_name=run3
+source=Convergencia simulada desde un error inicial grande
+wheel_separation=0.23000
+topics=/odom,/cmd_vel,/tf
+format=csv-surrogate

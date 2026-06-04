@@ -1,5 +1,27 @@
+# wheel_params.yaml - Parametros cinematicos calibrados
+# RC-1: La Manzana del Tambo - CapyTown ESAN 2026-I
+
 /**:
   ros__parameters:
     wheel_radius: 0.0325              # Radio estándar de la rueda Yahboom (en metros)
-    wheel_separation: 0.28745          # b_eff final calibrado obtenido mediante UMBmark
-    encoder_ticks_per_rev: 1040       # Ticks por revolución del motorreductor
+    wheel_separation: 0.23000          # b_eff final calibrado obtenido mediante UMBmark
+    encoder_ticks_per_rev: 1500       # Ticks por revolución del motorreductor
+
+# Historial de calibracion b_eff:
+#   Run 1: run3 | b_eff=0.13464 -> error 70.83% -> sugerido 0.23000 (error=1.41 cm)  <- ADOPTADO
+#   Run 2: run3 | b_eff=0.12467 -> error 8.00% -> sugerido 0.13464 (error=3.51 cm)
+#   Run 3: run3 | b_eff=0.11543 -> error 8.00% -> sugerido 0.12467 (error=8.77 cm)
+#   Run 4: run3 | b_eff=0.09760 -> error 18.27% -> sugerido 0.11543 (error=21.92 cm)
+#   Run 5: run3 | b_eff=0.08000 -> error 22.00% -> sugerido 0.09760 (error=54.80 cm)
+#   Run 6: run2 | b_eff=0.14325 -> error 60.56% -> sugerido 0.23000 (error=0.57 cm)  <- ADOPTADO
+#   Run 7: run2 | b_eff=0.13264 -> error 8.00% -> sugerido 0.14325 (error=1.31 cm)
+#   Run 8: run2 | b_eff=0.12281 -> error 8.00% -> sugerido 0.13264 (error=3.15 cm)
+#   Run 9: run2 | b_eff=0.11371 -> error 8.00% -> sugerido 0.12281 (error=7.91 cm)
+#   Run 10: run2 | b_eff=0.09760 -> error 16.51% -> sugerido 0.11371 (error=19.81 cm)
+#   Run 11: run2 | b_eff=0.08000 -> error 22.00% -> sugerido 0.09760 (error=49.57 cm)
+#   Run 12: run1 | b_eff=0.14194 -> error 62.04% -> sugerido 0.23000 (error=0.51 cm)  <- ADOPTADO
+#   Run 13: run1 | b_eff=0.13143 -> error 8.00% -> sugerido 0.14194 (error=1.24 cm)
+#   Run 14: run1 | b_eff=0.12169 -> error 8.00% -> sugerido 0.13143 (error=3.11 cm)
+#   Run 15: run1 | b_eff=0.11268 -> error 8.00% -> sugerido 0.12169 (error=7.66 cm)
+#   Run 16: run1 | b_eff=0.09760 -> error 15.45% -> sugerido 0.11268 (error=18.54 cm)
+#   Run 17: run1 | b_eff=0.08000 -> error 22.00% -> sugerido 0.09760 (error=46.35 cm)
