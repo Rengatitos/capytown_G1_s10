@@ -56,22 +56,11 @@ informe.pdf
 ```
 
 ## Ejecucion
-
-### Modo simulacion completo
-
-```powershell
-Set-Location "C:\Users\camil\Downloads\ROBOTICA RETO 1\Robotica-Reto1\capytown_esan"
-python .\error_odom.py --sim --bags-dir "C:\Users\camil\Downloads\ROBOTICA RETO 1\Robotica-Reto1\bags" --plots-dir "C:\Users\camil\Downloads\ROBOTICA RETO 1\Robotica-Reto1\plots" --yaml "C:\Users\camil\Downloads\ROBOTICA RETO 1\Robotica-Reto1\config\wheel_params.yaml"
-```
-
-### Procesar un bag real
-
-```powershell
-python .\error_odom.py --bag "C:\ruta\al\bag"
-```
+https://github.com/user-attachments/assets/97d03a81-6cae-4ded-bd68-6aab40559967
 
 ## Notas
 
 - `calibration_log.csv` registra el historial de calibracion de `b_eff` en la raiz del repositorio.
 - `wheel_params.yaml` conserva el valor final adoptado y el historial comentado de calibracion.
 - Los bags simulados se guardan como carpetas `bags/tambo_G_run*.bag/` con `odom.csv` y `metadata.txt` para reproducibilidad local.
+](https://github.com/user-attachments/assets/97d03a81-6cae-4ded-bd68-6aab40559967)
