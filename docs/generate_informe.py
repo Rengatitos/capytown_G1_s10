@@ -160,22 +160,11 @@ def build_pdf():
     story.append(Paragraph("(a) Prediccion inicial", styles["SectionAPA"]))
     story.append(
         Paragraph(
-            "Se esperaba que la deriva se concentrara en las esquinas por el slip lateral del skid-steer. "
-            "Las rectas debian aportar menos error que los giros. Aunque una mayor resolucion de encoders reduce ruido, "
-            "no elimina la deriva porque la fuente principal es fisica y no sensorial.",
+            "Se preveía que la odometría del robot skid-steer acumularía errores por deslizamiento lateral en giros, haciendo que la separación efectiva de ruedas (b_eff) fuera mayor que el ancho físico. Una sobreestimación del giro por odometría indicaría un b_eff pequeño. Se confirmó que, aun con calibración, el error se acumula en lazo abierto. Nuestro ejercicio simulado, tras una calibración iterativa, estableció un b_eff final de 0.23000 m con un error de cierre de 0.01-0.02 cm en un cuadrado de 1x1m.",
             styles["BodyAPA"],
         )
     )
 
-    story.append(Paragraph("(a) Prediccion inicial", styles["SectionAPA"]))
-    story.append(
-        Paragraph(
-            "Se esperaba que la deriva se concentrara en las esquinas por el slip lateral del skid-steer. "
-            "Las rectas debian aportar menos error que los giros. Aunque una mayor resolucion de encoders reduce ruido, "
-            "no elimina la deriva porque la fuente principal es fisica y no sensorial.",
-            styles["BodyAPA"],
-        )
-    )
 
     story.append(Paragraph("(b) Calibracion de b_eff", styles["SectionAPA"]))
 
