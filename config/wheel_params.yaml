@@ -1,0 +1,5 @@
+/**:
+  ros__parameters:
+    wheel_radius: 0.0325              # Radio estándar de la rueda Yahboom (en metros)
+    wheel_separation: 0.28745          # b_eff final calibrado obtenido mediante UMBmark
+    encoder_ticks_per_rev: 1040       # Ticks por revolución del motorreductor
